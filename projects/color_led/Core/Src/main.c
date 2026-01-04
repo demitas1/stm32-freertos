@@ -1,11 +1,11 @@
 /*
  * main.c - Rainbow LED with FreeRTOS on STM32F411CE (Black Pill)
  *
- * This example creates an RGB LED rainbow effect using software PWM.
- * LED GPIO Configuration (defined in rgb_led.h):
- *   - PB0 = Blue
- *   - PB1 = Green
- *   - PB2 = Red
+ * RGB LED rainbow effect using TIM4 hardware PWM.
+ * GPIO Configuration:
+ *   - PB6 = Red   (TIM4_CH1)
+ *   - PB7 = Green (TIM4_CH2)
+ *   - PB8 = Blue  (TIM4_CH3)
  */
 
 #include "main.h"
@@ -28,9 +28,6 @@ static void Rainbow_Task(void *pvParameters);
 
 /* Task handles */
 TaskHandle_t rainbowTaskHandle = NULL;
-
-/* Timer handle (defined in rgb_led.c) */
-extern TIM_HandleTypeDef htim2;
 
 /**
  * @brief  Application entry point
@@ -151,25 +148,6 @@ static void SystemClock_Config(void)
     if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_3) != HAL_OK)
     {
         Error_Handler();
-    }
-}
-
-/**
- * @brief  TIM2 interrupt handler
- */
-void TIM2_IRQHandler(void)
-{
-    HAL_TIM_IRQHandler(&htim2);
-}
-
-/**
- * @brief  Timer period elapsed callback
- */
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
-{
-    if (htim->Instance == TIM2)
-    {
-        rgb_led_pwm_update();
     }
 }
 

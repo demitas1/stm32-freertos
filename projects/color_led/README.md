@@ -5,43 +5,25 @@ STM32F411CE (Black Pill) + FreeRTOS によるRGB LEDレインボーエフェク�
 ## 機能
 
 - HSV色空間を使用したレインボーエフェクト
-- ソフトウェアPWMによる輝度制御（任意のGPIOピンで動作）
+- TIM4ハードウェアPWMによる輝度制御
 - PC13オンボードLEDによる動作確認用点滅
 
 ## ハードウェア接続
 
-### デフォルト設定
+### GPIO設定 (TIM4 PWM)
 
-| 色 | GPIO | ピン |
-|----|------|------|
-| Red | PB2 | GPIO_PIN_2 |
-| Green | PB1 | GPIO_PIN_1 |
-| Blue | PB0 | GPIO_PIN_0 |
+| 色 | GPIO | タイマーチャンネル |
+|----|------|-------------------|
+| Red | PB6 | TIM4_CH1 |
+| Green | PB7 | TIM4_CH2 |
+| Blue | PB8 | TIM4_CH3 |
 
 ### 回路例（カソードコモンRGB LED）
 
 ```
-3.3V ─┬─ [R 220Ω] ─ Red   ─┐
-      ├─ [R 220Ω] ─ Green ─┼─ RGB LED ─ GND
-      └─ [R 220Ω] ─ Blue  ─┘
-
-PB2 ──────────────────── Red
-PB1 ──────────────────── Green
-PB0 ──────────────────── Blue
-```
-
-## GPIO設定の変更
-
-`Core/Inc/rgb_led.h` を編集:
-
-```c
-/* GPIO Configuration - Modify these to change LED pins */
-#define LED_RED_PORT    GPIOB
-#define LED_RED_PIN     GPIO_PIN_2
-#define LED_GREEN_PORT  GPIOB
-#define LED_GREEN_PIN   GPIO_PIN_1
-#define LED_BLUE_PORT   GPIOB
-#define LED_BLUE_PIN    GPIO_PIN_0
+PB6 ─[R 220Ω]─ Red   ─┐
+PB7 ─[R 220Ω]─ Green ─┼─ RGB LED ─ GND
+PB8 ─[R 220Ω]─ Blue  ─┘
 ```
 
 ## ビルドと実行
@@ -56,12 +38,13 @@ make flash
 
 ## 実装詳細
 
-### ソフトウェアPWM
+### ハードウェアPWM (TIM4)
 
-- TIM2タイマー割り込みを使用
-- 周波数: 約100Hz（256ステップ × 100Hz = 25.6kHz割り込み）
+- タイマークロック: 100MHz (APB1 x2)
+- PWM周波数: 約1kHz
 - 分解能: 8ビット（0-255）
-- 任意のGPIOピンでPWM出力可能
+- プリスケーラ: 390
+- カウンタ周期: 255
 
 ### レインボーエフェクト
 
@@ -76,13 +59,13 @@ color_led/
 ├── Core/
 │   ├── Inc/
 │   │   ├── main.h
-│   │   ├── rgb_led.h      # GPIO設定
+│   │   ├── rgb_led.h      # PWM設定
 │   │   ├── hsv.h
 │   │   ├── FreeRTOSConfig.h
 │   │   └── stm32f4xx_hal_conf.h
 │   └── Src/
 │       ├── main.c         # メインタスク
-│       ├── rgb_led.c      # PWMドライバ
+│       ├── rgb_led.c      # TIM4 PWMドライバ
 │       ├── hsv.c          # 色変換
 │       └── ...
 ├── Makefile
@@ -93,26 +76,22 @@ color_led/
 
 ### LEDが点灯しない
 
-1. GPIO接続を確認
+1. GPIO接続を確認（PB6, PB7, PB8）
 2. LED極性を確認（アノードコモン/カソードコモン）
 3. PC13が点滅しているか確認（プログラム動作確認）
 
 ### アノードコモンLEDの場合
 
-`rgb_led.c` の `rgb_led_pwm_update()` でロジックを反転:
+`rgb_led.c` の `rgb_led_init()` で極性を変更:
 
 ```c
-// カソードコモン: HIGH = ON
-if (pwm_counter < duty_red) {
-    HAL_GPIO_WritePin(LED_RED_PORT, LED_RED_PIN, GPIO_PIN_SET);
-} else {
-    HAL_GPIO_WritePin(LED_RED_PORT, LED_RED_PIN, GPIO_PIN_RESET);
-}
-
-// アノードコモン: LOW = ON に変更
-if (pwm_counter < duty_red) {
-    HAL_GPIO_WritePin(LED_RED_PORT, LED_RED_PIN, GPIO_PIN_RESET);
-} else {
-    HAL_GPIO_WritePin(LED_RED_PORT, LED_RED_PIN, GPIO_PIN_SET);
-}
+/* 極性を反転 */
+sConfigOC.OCPolarity = TIM_OCPOLARITY_LOW;  // HIGH → LOW に変更
 ```
+
+## ピン選定の理由
+
+TIM4 (PB6, PB7, PB8) を選択した理由:
+- ハードウェアPWM対応
+- 同一タイマーの連続チャンネルで制御が容易
+- 連続したピン番号で配線しやすい

@@ -1,78 +1,71 @@
 /*
  * rgb_led.c - RGB LED PWM Driver
  *
- * Uses TIM2 for software PWM to allow flexible GPIO configuration.
- * Any GPIO pin can be used for R, G, B LEDs.
+ * Hardware PWM using TIM4:
+ *   PB6: TIM4_CH1 → Red
+ *   PB7: TIM4_CH2 → Green
+ *   PB8: TIM4_CH3 → Blue
  */
 
 #include "rgb_led.h"
 #include "main.h"
 
-/* PWM state */
-static volatile uint8_t pwm_counter = 0;
-static volatile uint8_t duty_red = 0;
-static volatile uint8_t duty_green = 0;
-static volatile uint8_t duty_blue = 0;
-
 /* Timer handle */
-TIM_HandleTypeDef htim2;
+static TIM_HandleTypeDef htim4;
 
 /**
- * @brief Initialize RGB LED GPIOs and PWM timer
+ * @brief Initialize RGB LED GPIOs and TIM4 PWM
  */
 void rgb_led_init(void)
 {
     GPIO_InitTypeDef GPIO_InitStruct = {0};
+    TIM_OC_InitTypeDef sConfigOC = {0};
 
-    /* Enable GPIO clocks */
+    /* Enable clocks */
     __HAL_RCC_GPIOB_CLK_ENABLE();
+    __HAL_RCC_TIM4_CLK_ENABLE();
 
-    /* Configure LED pins as outputs */
-    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+    /* Configure PB6, PB7, PB8 as TIM4 PWM outputs (AF2) */
+    GPIO_InitStruct.Pin = GPIO_PIN_6 | GPIO_PIN_7 | GPIO_PIN_8;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+    GPIO_InitStruct.Alternate = GPIO_AF2_TIM4;
+    HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-    /* Red LED */
-    GPIO_InitStruct.Pin = LED_RED_PIN;
-    HAL_GPIO_Init(LED_RED_PORT, &GPIO_InitStruct);
-
-    /* Green LED */
-    GPIO_InitStruct.Pin = LED_GREEN_PIN;
-    HAL_GPIO_Init(LED_GREEN_PORT, &GPIO_InitStruct);
-
-    /* Blue LED */
-    GPIO_InitStruct.Pin = LED_BLUE_PIN;
-    HAL_GPIO_Init(LED_BLUE_PORT, &GPIO_InitStruct);
-
-    /* Start with LEDs off */
-    HAL_GPIO_WritePin(LED_RED_PORT, LED_RED_PIN, GPIO_PIN_RESET);
-    HAL_GPIO_WritePin(LED_GREEN_PORT, LED_GREEN_PIN, GPIO_PIN_RESET);
-    HAL_GPIO_WritePin(LED_BLUE_PORT, LED_BLUE_PIN, GPIO_PIN_RESET);
-
-    /* Configure TIM2 for PWM timing
-     * APB1 clock = 50MHz (SYSCLK/2)
-     * Timer clock = 100MHz (APB1 timer clock x2 when prescaler > 1)
-     *
-     * For 100Hz PWM with 256 steps:
-     * Update rate = 100Hz * 256 = 25600 Hz
-     * 100MHz / 100 / 39 ≈ 25641 Hz
+    /* Configure TIM4 for PWM
+     * APB1 timer clock = 100MHz (APB1 = 50MHz, timer x2)
+     * PWM frequency = 1kHz
+     * Period = 255 (8-bit resolution)
+     * Prescaler = 100MHz / (1000Hz * 256) - 1 = 390
      */
-    __HAL_RCC_TIM2_CLK_ENABLE();
+    htim4.Instance = TIM4;
+    htim4.Init.Prescaler = 390;
+    htim4.Init.CounterMode = TIM_COUNTERMODE_UP;
+    htim4.Init.Period = 255;
+    htim4.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+    htim4.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+    HAL_TIM_PWM_Init(&htim4);
 
-    htim2.Instance = TIM2;
-    htim2.Init.Prescaler = 99;    /* 100MHz / 100 = 1MHz */
-    htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-    htim2.Init.Period = 38;       /* 1MHz / 39 ≈ 25.6kHz */
-    htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-    htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-    HAL_TIM_Base_Init(&htim2);
+    /* Configure PWM channels */
+    sConfigOC.OCMode = TIM_OCMODE_PWM1;
+    sConfigOC.Pulse = 0;
+    sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+    sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
 
-    /* Enable TIM2 interrupt */
-    HAL_NVIC_SetPriority(TIM2_IRQn, 5, 0);
-    HAL_NVIC_EnableIRQ(TIM2_IRQn);
+    /* Channel 1 - Red (PB6) */
+    HAL_TIM_PWM_ConfigChannel(&htim4, &sConfigOC, TIM_CHANNEL_1);
 
-    /* Start timer */
-    HAL_TIM_Base_Start_IT(&htim2);
+    /* Channel 2 - Green (PB7) */
+    HAL_TIM_PWM_ConfigChannel(&htim4, &sConfigOC, TIM_CHANNEL_2);
+
+    /* Channel 3 - Blue (PB8) */
+    HAL_TIM_PWM_ConfigChannel(&htim4, &sConfigOC, TIM_CHANNEL_3);
+
+    /* Start PWM on all channels */
+    HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_1);
+    HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_2);
+    HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_3);
 }
 
 /**
@@ -83,38 +76,7 @@ void rgb_led_init(void)
  */
 void rgb_led_set_color(uint8_t red, uint8_t green, uint8_t blue)
 {
-    duty_red = red;
-    duty_green = green;
-    duty_blue = blue;
-}
-
-/**
- * @brief PWM update - call from TIM2 interrupt
- *
- * Implements software PWM by comparing counter with duty cycle.
- */
-void rgb_led_pwm_update(void)
-{
-    pwm_counter++;
-
-    /* Red LED */
-    if (pwm_counter < duty_red) {
-        HAL_GPIO_WritePin(LED_RED_PORT, LED_RED_PIN, GPIO_PIN_SET);
-    } else {
-        HAL_GPIO_WritePin(LED_RED_PORT, LED_RED_PIN, GPIO_PIN_RESET);
-    }
-
-    /* Green LED */
-    if (pwm_counter < duty_green) {
-        HAL_GPIO_WritePin(LED_GREEN_PORT, LED_GREEN_PIN, GPIO_PIN_SET);
-    } else {
-        HAL_GPIO_WritePin(LED_GREEN_PORT, LED_GREEN_PIN, GPIO_PIN_RESET);
-    }
-
-    /* Blue LED */
-    if (pwm_counter < duty_blue) {
-        HAL_GPIO_WritePin(LED_BLUE_PORT, LED_BLUE_PIN, GPIO_PIN_SET);
-    } else {
-        HAL_GPIO_WritePin(LED_BLUE_PORT, LED_BLUE_PIN, GPIO_PIN_RESET);
-    }
+    __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_1, red);
+    __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_2, green);
+    __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_3, blue);
 }

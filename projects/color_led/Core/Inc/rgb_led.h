@@ -1,7 +1,7 @@
 /*
  * rgb_led.h - RGB LED PWM Driver
  *
- * Software PWM implementation for flexible GPIO configuration.
+ * Hardware PWM using TIM4 (PB6, PB7, PB8)
  */
 
 #ifndef RGB_LED_H
@@ -10,27 +10,20 @@
 #include <stdint.h>
 
 /*
- * GPIO Configuration - Modify these to change LED pins
+ * GPIO Configuration (TIM4 channels)
  *
- * Default: PB0=Blue, PB1=Green, PB2=Red
+ * PB6: TIM4_CH1 → Red
+ * PB7: TIM4_CH2 → Green
+ * PB8: TIM4_CH3 → Blue
  */
-#define LED_RED_PORT    GPIOB
-#define LED_RED_PIN     GPIO_PIN_2
-#define LED_GREEN_PORT  GPIOB
-#define LED_GREEN_PIN   GPIO_PIN_1
-#define LED_BLUE_PORT   GPIOB
-#define LED_BLUE_PIN    GPIO_PIN_0
 
-/* PWM frequency in Hz (affects flicker visibility) */
-#define RGB_PWM_FREQ    100
+/* PWM frequency in Hz */
+#define RGB_PWM_FREQ    1000
 
 /* Initialize RGB LED PWM */
 void rgb_led_init(void);
 
 /* Set RGB color (0-255 for each channel) */
 void rgb_led_set_color(uint8_t red, uint8_t green, uint8_t blue);
-
-/* PWM update function - called from timer interrupt */
-void rgb_led_pwm_update(void);
 
 #endif /* RGB_LED_H */

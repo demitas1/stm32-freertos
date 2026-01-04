@@ -15,6 +15,37 @@ stm32/
 └── stm32-embassy/        # Rust Embassy環境 (将来)
 ```
 
+## ホスト側の設定
+
+### udevルール (ST-Link用)
+
+ST-Linkをroot権限なしで使用するため、udevルールを設定する。
+
+```bash
+sudo tee /etc/udev/rules.d/99-stlink.rules << 'EOF'
+# ST-Link V2
+ATTRS{idVendor}=="0483", ATTRS{idProduct}=="3748", MODE="0666", GROUP="plugdev"
+# ST-Link V2-1
+ATTRS{idVendor}=="0483", ATTRS{idProduct}=="374b", MODE="0666", GROUP="plugdev"
+# ST-Link V3
+ATTRS{idVendor}=="0483", ATTRS{idProduct}=="374e", MODE="0666", GROUP="plugdev"
+ATTRS{idVendor}=="0483", ATTRS{idProduct}=="374f", MODE="0666", GROUP="plugdev"
+EOF
+
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+```
+
+### plugdevグループへの追加
+
+```bash
+# 現在のユーザーがplugdevに所属しているか確認
+groups | grep plugdev
+
+# 所属していない場合は追加（要ログアウト/ログイン）
+sudo usermod -aG plugdev $USER
+```
+
 ## セットアップ
 
 ### 1. 依存ライブラリのセットアップ

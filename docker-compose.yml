@@ -1,0 +1,19 @@
+services:
+  stm32-dev:
+    build:
+      context: .
+    image: stm32f4-freertos-dev
+    user: "${UID:-1000}:${GID:-1000}"
+    container_name: stm32-freertos-dev
+    volumes:
+      - ./projects:/projects
+      - ../stm32-deps:/stm32-deps
+      - /dev/bus/usb:/dev/bus/usb
+    devices:
+      - /dev/bus/usb:/dev/bus/usb
+    privileged: true
+    tty: true
+    stdin_open: true
+    working_dir: /projects
+    environment:
+      - TERM=xterm-256color
